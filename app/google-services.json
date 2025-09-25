@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "110924526644",
+    "project_id": "la-gotita-40854",
+    "storage_bucket": "la-gotita-40854.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:110924526644:android:28328c79e8a5ec72ca0661",
+        "android_client_info": {
+          "package_name": "com.example.la_gotita"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1dhO35JZli0b8wxcpJrHaEhv4nZFAC8A"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
