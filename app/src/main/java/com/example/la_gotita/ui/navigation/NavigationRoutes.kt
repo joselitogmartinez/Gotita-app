@@ -22,6 +22,7 @@ object AppScreenRoutes {
     const val ADMIN_NOTIFICATIONS = "admin_notifications"
     const val ADMIN_INBOX = "admin_inbox"
     const val ADMIN_SETTINGS = "admin_settings"
+    const val INVENTORY_MANAGEMENT = "inventory_management"
 }
 
 data class NavigationItem(

@@ -1,6 +1,6 @@
 package com.example.la_gotita.ui.admin
 
-
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -33,15 +32,13 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import com.example.la_gotita.R
 import com.example.la_gotita.ui.navigation.*
 import com.example.la_gotita.ui.login.AuthViewModel
 import com.example.la_gotita.ui.common.PlaceholderScreen
-import com.example.la_gotita.ui.components.CourseCard
-import com.example.la_gotita.ui.components.CourseItemData
+import com.example.la_gotita.ui.components.ModuleCard
+import com.example.la_gotita.ui.components.ModuleItemData
 import com.example.la_gotita.data.model.User
 import com.example.la_gotita.data.model.UserRole
-import com.example.designsystem.theme.ThemeMode
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,7 +61,6 @@ fun AdminDashboardScaffold(
             ?: "Admin"
     }
 
-    // Manejo de botón atrás: primero cierra el drawer, luego intenta hacer pop en el nav interno
     val canPopInner = adminContentNavController.previousBackStackEntry != null
     BackHandler(enabled = drawerState.isOpen || canPopInner) {
         when {
@@ -78,15 +74,28 @@ fun AdminDashboardScaffold(
         drawerContent = {
             AdminDrawerContent(
                 onItemSelected = { route ->
-                    scope.launch { drawerState.close() }
-                    if (route == AppScreenRoutes.ADMIN_USER_MANAGEMENT || route == AppScreenRoutes.ADMIN_SETTINGS) {
-                        appNavController.navigate(route) {
-                            popUpTo(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                    scope.launch {
+                        try {
+                            drawerState.close()
+                        } catch (_: Exception) {}
+
+                        if (route == AppScreenRoutes.ADMIN_USER_MANAGEMENT || route == AppScreenRoutes.ADMIN_SETTINGS) {
+                            try {
+                                appNavController.navigate(route) {
+                                    popUpTo(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            } catch (e: Exception) {
+                                Log.e("NavError", "Failed to navigate to $route", e)
+                            }
+                        } else {
+                            try {
+                                adminContentNavController.navigateTopLevel(route, adminContentNavController.graph.startDestinationId)
+                            } catch (e: Exception) {
+                                Log.e("NavError", "Failed internal navigate to $route", e)
+                            }
                         }
-                    } else {
-                        adminContentNavController.navigateTopLevel(route, adminContentNavController.graph.startDestinationId)
                     }
                 },
                 onLogout = {
@@ -135,7 +144,8 @@ fun AdminDashboardScaffold(
         ) { paddingValues ->
             AdminDashboardContentHost(
                 modifier = Modifier.padding(paddingValues),
-                navController = adminContentNavController
+                navController = adminContentNavController,
+                appNavController = appNavController
             )
         }
     }
@@ -177,13 +187,27 @@ fun AdminDrawerContent(
 }
 
 @Composable
-fun AdminDashboardContentHost(modifier: Modifier = Modifier, navController: NavHostController) {
+fun AdminDashboardContentHost(
+    modifier: Modifier = Modifier,
+    navController: NavHostController,
+    appNavController: NavHostController
+) {
     NavHost(
         navController = navController,
         startDestination = AppScreenRoutes.ADMIN_HOME,
         modifier = modifier
     ) {
-        composable(AppScreenRoutes.ADMIN_HOME) { AdminHomeScreen() }
+        composable(AppScreenRoutes.ADMIN_HOME) {
+            AdminHomeScreen(
+                onModuleClick = { route ->
+                    appNavController.navigate(route) {
+                        popUpTo(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                }
+            )
+        }
         composable(AppScreenRoutes.ADMIN_CALENDAR) { PlaceholderScreen("Calendario") }
         composable(AppScreenRoutes.ADMIN_TASKS) { PlaceholderScreen("Por Hacer") }
         composable(AppScreenRoutes.ADMIN_NOTIFICATIONS) { PlaceholderScreen("Notificaciones") }
@@ -192,7 +216,9 @@ fun AdminDashboardContentHost(modifier: Modifier = Modifier, navController: NavH
 }
 
 @Composable
-fun AdminHomeScreen() {
+fun AdminHomeScreen(
+    onModuleClick: (String) -> Unit = {}
+) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Card(
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
@@ -219,16 +245,16 @@ fun AdminHomeScreen() {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Cursos", style = MaterialTheme.typography.titleLarge)
-            TextButton(onClick = { /* TODO: Ver todos los cursos */ }) { Text("Todos los cursos") }
+            Text("Módulos del Sistema", style = MaterialTheme.typography.titleLarge)
+            TextButton(onClick = { /* TODO: Ver estadísticas */ }) { Text("Ver estadísticas") }
         }
 
-        val courses = listOf(
-            CourseItemData("ASEGURAMIENTO DE LA CALIDAD DE SOFTWARE", "220250907048A", R.drawable.ic_launcher_background, "64.28%"),
-            CourseItemData("PROYECTO DE GRADUACIÓN II - 2202...", "220250907049A", R.drawable.ic_launcher_background, "N. a."),
-            CourseItemData("SEGURIDAD Y AUDITORÍA DE SISTE...", "220250907050A", R.drawable.ic_launcher_background, "99.08%"),
-            CourseItemData("SEMINARIO DE TECNOLOGÍAS DE INF...", "220250907000A", R.drawable.ic_launcher_background, "100%"),
-            CourseItemData("TELECOMUNICACIONES - 22025-0907-046-A", "220250907046A", R.drawable.ic_launcher_background, "N. a.")
+        val systemModules = listOf(
+            ModuleItemData("Gestión de Inventarios", "Inventario de productos y stock", Icons.Filled.Inventory, AppScreenRoutes.INVENTORY_MANAGEMENT, true),
+            ModuleItemData("Gestión de Clientes", "CRM y datos de clientes", Icons.Filled.People, "", false),
+            ModuleItemData("Módulo de Ventas", "Registro y control de ventas", Icons.Filled.PointOfSale, "", false),
+            ModuleItemData("Módulo de Gastos", "Control de gastos operativos", Icons.Filled.Receipt, "", false),
+            ModuleItemData("Módulo de Contabilidad", "Reportes y balances", Icons.Filled.AccountBalance, "", false)
         )
 
         LazyVerticalGrid(
@@ -238,13 +264,16 @@ fun AdminHomeScreen() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            items(courses) { course ->
-                CourseCard(course)
+            items(systemModules) { module ->
+                ModuleCard(
+                    module = module,
+                    onModuleClick = onModuleClick
+                )
             }
         }
 
-        Text("Grupos", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
-        Text("Contenido de la sección de grupos irá aquí...", style = MaterialTheme.typography.bodyMedium)
+        Text("Resumen", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+        Text("Panel de control y estadísticas del sistema aparecerán aquí...", style = MaterialTheme.typography.bodyMedium)
         Spacer(modifier = Modifier.height(16.dp))
     }
 }
@@ -385,7 +414,6 @@ private fun ModernUserCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar circular con inicial
             Box(
                 modifier = Modifier
                     .size(56.dp)
@@ -409,7 +437,6 @@ private fun ModernUserCard(
 
             Spacer(Modifier.width(16.dp))
 
-            // Información del usuario
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -422,7 +449,6 @@ private fun ModernUserCard(
                             MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                     )
                     Spacer(Modifier.width(8.dp))
-                    // Botón de editar pequeño - deshabilitado si usuario inactivo
                     IconButton(
                         onClick = { if (user.active) showEditDialog = true },
                         enabled = user.active,
@@ -450,7 +476,6 @@ private fun ModernUserCard(
                 )
                 Spacer(Modifier.height(8.dp))
 
-                // Chip de rol y botón Reset en la misma línea
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -495,7 +520,6 @@ private fun ModernUserCard(
                 }
             }
 
-            // Switch de activo/inactivo
             Switch(
                 checked = user.active,
                 onCheckedChange = { onToggleActive() },
@@ -509,7 +533,6 @@ private fun ModernUserCard(
         }
     }
 
-    // Diálogo de edición - solo si el usuario está activo
     if (showEditDialog && user.active) {
         var editName by remember { mutableStateOf(user.name ?: "") }
         var editEmail by remember { mutableStateOf(user.email ?: "") }
@@ -554,7 +577,6 @@ private fun ModernUserCard(
         )
     }
 
-    // Diálogo centrado para cambio de rol - solo si el usuario está activo
     if (showRoleDialog && user.active) {
         AlertDialog(
             onDismissRequest = { showRoleDialog = false },

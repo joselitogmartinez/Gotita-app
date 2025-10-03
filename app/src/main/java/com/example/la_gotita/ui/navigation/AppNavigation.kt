@@ -9,6 +9,8 @@ import androidx.navigation.compose.rememberNavController
 import com.example.la_gotita.data.model.UserRole
 import com.example.la_gotita.ui.admin.AdminDashboardScaffold
 import com.example.la_gotita.ui.admin.UserManagementScreen
+import com.example.la_gotita.ui.admin.SettingsScreen
+import com.example.la_gotita.ui.inventory.InventoryScreen
 import com.example.la_gotita.ui.employee.EmployeeDashboardScreen
 import com.example.la_gotita.ui.login.AuthViewModel
 import com.example.la_gotita.ui.login.LoginScreen
@@ -84,6 +86,33 @@ fun AppNavigation(
                     appNavController.navigate(AppScreenRoutes.LOGIN) {
                         popUpTo(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) { inclusive = true }
                         launchSingleTop = true
+                    }
+                }
+            )
+        }
+        composable(AppScreenRoutes.ADMIN_SETTINGS) {
+            SettingsScreen(
+                onBack = {
+                    if (!appNavController.popBackStack()) {
+                        appNavController.navigate(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) {
+                            popUpTo(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) { inclusive = false }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
+                themeViewModel = themeViewModel
+            )
+        }
+        composable(AppScreenRoutes.INVENTORY_MANAGEMENT) {
+            InventoryScreen(
+                onBack = {
+                    if (!appNavController.popBackStack()) {
+                        appNavController.navigate(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) {
+                            popUpTo(AppScreenRoutes.ADMIN_DASHBOARD_ROOT) { inclusive = false }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 }
             )

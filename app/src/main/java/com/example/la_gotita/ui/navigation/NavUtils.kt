@@ -54,10 +54,20 @@ fun NavHostController.popBackOrNavigateTo(rootRoute: String) {
  * Requiere el startDestinationId del grafo actual para popUpTo con save/restore state.
  */
 fun NavHostController.navigateTopLevel(route: String, startDestinationId: Int) {
-    this.navigate(route) {
-        popUpTo(startDestinationId) { saveState = true }
-        launchSingleTop = true
-        restoreState = true
+    try {
+        this.navigate(route) {
+            popUpTo(startDestinationId) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    } catch (e: Exception) {
+        android.util.Log.e("NavUtils", "navigateTopLevel failed for route=$route", e)
+        // fallback: intentar volver a la raíz
+        try {
+            this.navigate(startDestinationId.toString()) {
+                popUpTo(startDestinationId) { inclusive = false }
+                launchSingleTop = true
+            }
+        } catch (_: Exception) { /* swallow */ }
     }
 }
-
