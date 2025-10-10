@@ -17,6 +17,9 @@ import com.example.la_gotita.ui.login.LoginScreen
 import com.example.la_gotita.ui.splash.SplashScreen
 import com.example.la_gotita.theme.ThemeViewModel
 import com.example.designsystem.theme.ThemeMode
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
+import com.example.la_gotita.ui.inventory.InventoryHistoryScreen
 
 @Composable
 fun AppNavigation(
@@ -114,7 +117,20 @@ fun AppNavigation(
                             restoreState = true
                         }
                     }
+                },
+                onOpenHistory = { productId ->
+                    appNavController.navigate("${AppScreenRoutes.INVENTORY_HISTORY}/$productId")
                 }
+            )
+        }
+        composable(
+            route = "${AppScreenRoutes.INVENTORY_HISTORY}/{productId}",
+            arguments = listOf(navArgument("productId") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val productId = backStackEntry.arguments?.getString("productId") ?: return@composable
+            InventoryHistoryScreen(
+                productId = productId,
+                onBack = { appNavController.popBackStack() }
             )
         }
     }

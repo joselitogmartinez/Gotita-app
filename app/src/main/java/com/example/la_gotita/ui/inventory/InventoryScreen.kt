@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -24,15 +25,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.LayoutDirection
 import com.example.la_gotita.data.model.InventoryItem
 import com.example.la_gotita.ui.navigation.SafeBackHandler
 import java.text.NumberFormat
@@ -45,15 +49,16 @@ import android.net.Uri
 import java.io.InputStream
 import kotlin.math.roundToInt
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryScreen(
     onBack: () -> Unit,
+    onOpenHistory: (String) -> Unit,
     viewModel: InventoryViewModel = viewModel()
 ) {
     SafeBackHandler(onBack = onBack)
@@ -61,7 +66,6 @@ fun InventoryScreen(
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     var showAddProductDialog by remember { mutableStateOf(false) }
-    var selectedItem by remember { mutableStateOf<InventoryItem?>(null) }
 
     LaunchedEffect(Unit) {
         viewModel.loadInventory()
@@ -115,7 +119,7 @@ fun InventoryScreen(
             } else {
                 ProductList(
                     items = uiState.filteredItems,
-                    onProductClick = { item -> selectedItem = item }
+                    onProductClick = { item -> onOpenHistory(item.productId) }
                 )
             }
         }
@@ -125,25 +129,9 @@ fun InventoryScreen(
     if (showAddProductDialog) {
         AddProductDialog(
             onDismiss = { showAddProductDialog = false },
-            onConfirm = { productName, pricePerUnit ->
-                viewModel.addProduct(productName.uppercase(), pricePerUnit, context)
+            onConfirm = { productName, pricePerUnit, costPrice, description ->
+                viewModel.addProduct(productName.uppercase(), pricePerUnit, costPrice, description, context)
                 showAddProductDialog = false
-            }
-        )
-    }
-
-    // Diálogo de detalles del producto
-    selectedItem?.let { item ->
-        InventoryDetailDialog(
-            item = item,
-            onDismiss = { selectedItem = null },
-            onEdit = { updatedItem ->
-                viewModel.updateInventoryItem(updatedItem, context)
-                selectedItem = null
-            },
-            onDelete = { itemId ->
-                viewModel.deleteInventoryItem(itemId, context)
-                selectedItem = null
             }
         )
     }
@@ -188,8 +176,7 @@ private fun ProductListItem(
     // Parámetros visuales
     val isDark = isSystemInDarkTheme()
     val swipeColor = if (isDark) Color(0xFFFFA726) else Color(0xFFF57C00)
-    val priceBg = if (isDark) Color(0xFF1B5E20) else Color(0xFF2E7D32)
-    val context = LocalContext.current // Corregido: obtener contexto aquí
+    val context = LocalContext.current
 
     // Dimensiones
     val density = LocalDensity.current
@@ -238,12 +225,10 @@ private fun ProductListItem(
             }
         }
 
-        // Contenido (tarjeta) que se desplaza a la izquierda hasta 96dp con animación suave al soltar
+        // Contenido (tarjeta)
         Box(
             modifier = Modifier
-                .onGloballyPositioned { coords: LayoutCoordinates ->
-                    cardHeightPx = coords.size.height.toFloat()
-                }
+                .onGloballyPositioned { coords: LayoutCoordinates -> cardHeightPx = coords.size.height.toFloat() }
                 .offset { IntOffset(x = -reveal.value.roundToInt(), y = 0) }
                 .draggable(
                     orientation = Orientation.Horizontal,
@@ -256,7 +241,6 @@ private fun ProductListItem(
                         val shouldOpen = reveal.value >= threshold
                         scope.launch {
                             if (shouldOpen) {
-                                // pequeño rebote hacia adelante y luego acción
                                 reveal.animateTo(
                                     targetValue = (maxRevealPx + with(density) { 8.dp.toPx() }).coerceAtMost(maxRevealPx + 18f),
                                     animationSpec = tween(120, easing = FastOutSlowInEasing)
@@ -264,7 +248,6 @@ private fun ProductListItem(
                                 reveal.animateTo(maxRevealPx, animationSpec = tween(120, easing = FastOutSlowInEasing))
                                 onClick()
                             }
-                            // retorno suave al cero
                             reveal.animateTo(0f, animationSpec = tween(260, easing = FastOutSlowInEasing))
                         }
                     }
@@ -275,130 +258,217 @@ private fun ProductListItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .border(
-                        width = 1.5.dp,
-                        color = if (isDark) Color(0xFFCFD8DC) else Color(0xFFB0BEC5),
-                        shape = RoundedCornerShape(12.dp)
+                        width = 1.dp,
+                        color = if (isDark) Color(0xFFE0E0E0) else Color(0xFFE0E0E0),
+                        shape = RoundedCornerShape(16.dp)
                     ),
-                shape = RoundedCornerShape(12.dp),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isDark) Color(0xFF23272A).copy(alpha = 0.85f) else Color(0xFFF7FAFC).copy(alpha = 0.85f)
-                )
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Icono o imagen
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                                shape = RoundedCornerShape(8.dp)
-                            )
-                            .clickable { imagePickerLauncher.launch("image/*") },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (imageUri != null) {
-                            val inputStream: InputStream? = try { context.contentResolver.openInputStream(imageUri) } catch (e: Exception) { null }
-                            val bitmap = remember(imageUri) {
-                                inputStream?.use { BitmapFactory.decodeStream(it) }
-                            }
-                            if (bitmap != null) {
-                                Image(
-                                    bitmap = bitmap.asImageBitmap(),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop // Import corregido
-                                )
+                Column(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
+                    // HEADER superior: icono a la izquierda y textos a la derecha (titulo ocupa todo el espacio)
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+                        val iconSize = 72.dp
+                        val iconCorner = 12.dp
+                        Box(
+                            modifier = Modifier
+                                .size(iconSize)
+                                .clip(RoundedCornerShape(iconCorner))
+                                .clickable { imagePickerLauncher.launch("image/*") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (imageUri != null) {
+                                val inputStream: InputStream? = try { context.contentResolver.openInputStream(imageUri) } catch (_: Exception) { null }
+                                val bitmap = remember(imageUri) { inputStream?.use { BitmapFactory.decodeStream(it) } }
+                                if (bitmap != null) {
+                                    Image(bitmap = bitmap.asImageBitmap(), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                } else {
+                                    // Fallback: mostrar iniciales en bloque azul si no se pudo decodificar el bitmap
+                                    val initials = remember(item.productName) { item.productName.trim().take(3).uppercase(Locale.getDefault()) }
+                                    Box(modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(color = Color(0xFFE3F2FD), shape = RoundedCornerShape(iconCorner)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = initials,
+                                            color = Color(0xFF1565C0),
+                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 28.sp),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
                             } else {
-                                Icon(
-                                    imageVector = Icons.Filled.Inventory,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                                // No hay imagen: mostrar las primeras 3 letras en un bloque azul con texto blanco
+                                val initials = remember(item.productName) { item.productName.trim().take(3).uppercase(Locale.getDefault()) }
+                                Box(modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(color = Color(0xFFE3F2FD), shape = RoundedCornerShape(iconCorner)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = initials,
+                                        color = Color(0xFF1565C0),
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold, fontSize = 28.sp),
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
                             }
-                        } else {
-                            Icon(
-                                imageVector = Icons.Filled.Inventory,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        // Título ocupado todo el espacio disponible (máx 3 líneas)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.productName,
+                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, fontSize = 20.sp, lineHeight = 24.sp),
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                                color = Color(0xFF212121)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // BLOQUE DE UNIDADES: movido arriba (header), a la derecha
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "${item.quantity}",
+                                fontSize = 42.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color(0xFFD32F2F),
+                                lineHeight = 42.sp
+                            )
+                            Text(
+                                text = "unidades",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Normal
+                                ),
+                                color = Color(0xFF9E9E9E)
                             )
                         }
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
 
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = item.productName,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp
-                            ),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+                    // FILA INFERIOR: 3 chips de precio compactos (altura flexible) alineados por abajo
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        //val chipShape = RoundedCornerShape(10.dp)
+                        // Eliminado: variables no usadas para evitar warnings
+                        // Reducimos la altura mínima para chips aún más compactos pero sin recortar el texto
+                        //val chipPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
 
-                        // Chip de precio (verde adaptado a tema, más transparente)
-                        val priceBgAlpha = if (isDark) Color(0xFF1B5E20).copy(alpha = 0.85f) else Color(0xFF2E7D32).copy(alpha = 0.85f)
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = priceBgAlpha,
-                                    shape = RoundedCornerShape(6.dp)
-                                )
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "Q${"%.2f".format(item.pricePerUnit)}",
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
+                        fun splitParts(value: Double): Pair<String, String> {
+                            val s = String.format(Locale.US, "%.2f", value)
+                            val parts = s.split('.')
+                            return parts[0] to parts.getOrElse(1) { "00" }
                         }
 
-                        Spacer(modifier = Modifier.height(6.dp))
+                        @Composable
+                        fun PriceChip(title: String, amount: Double, color: Color) {
+                            val (intPart, decPart) = splitParts(amount)
+                            val titleFont = 14.sp
+                            val priceFontDefault = 22.sp
+                            val decFontDefault = 19.sp
+                            val minFont = 12.sp
+                            val chipPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
 
-                        // Valor total en un cuadro amarillo, igual que el precio unitario, más transparente
-                        val totalBgAlpha = if (isDark) Color(0xFFFFF176).copy(alpha = 0.85f) else Color(0xFFFFEB3B).copy(alpha = 0.85f)
-                        Box(
-                            modifier = Modifier
-                                .background(
-                                    color = totalBgAlpha,
-                                    shape = RoundedCornerShape(6.dp)
-                                )
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "Valor total: Q${"%.2f".format(totalValue)}",
-                                color = Color.Black,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            )
+                            var chipWidthPx by remember { mutableStateOf(0) }
+                            var priceFont by remember { mutableStateOf(priceFontDefault) }
+                            var decFont by remember { mutableStateOf(decFontDefault) }
+
+                            val densityLocal = LocalDensity.current
+                            val textMeasurer = rememberTextMeasurer()
+
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onGloballyPositioned { coords -> chipWidthPx = coords.size.width },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = BorderStroke(2.dp, color),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                // Ajuste dinámico: reducimos las fuentes si el ancho total del texto excede el ancho disponible
+                                LaunchedEffect(chipWidthPx, intPart, decPart) {
+                                    if (chipWidthPx > 0) {
+                                        var pf = priceFontDefault
+                                        var df = decFontDefault
+
+                                        // Reservamos un margen interior por padding + separación
+                                        val reservedPx = with(densityLocal) { (chipPadding.calculateLeftPadding(LayoutDirection.Ltr) + chipPadding.calculateRightPadding(LayoutDirection.Ltr)).toPx() } + with(densityLocal) { 12.dp.toPx() }
+                                        val availablePx = chipWidthPx - reservedPx
+
+                                        // Loop seguro: reducimos hasta que quepa o hasta minFont
+                                        while (true) {
+                                            val priceLayout = textMeasurer.measure(
+                                                text = AnnotatedString("Q$intPart"),
+                                                style = TextStyle(fontSize = pf, fontWeight = FontWeight.ExtraBold)
+                                            )
+                                            val decLayout = textMeasurer.measure(
+                                                text = AnnotatedString(".${decPart}"),
+                                                style = TextStyle(fontSize = df, fontWeight = FontWeight.ExtraBold)
+                                            )
+
+                                            val totalTextWidth = priceLayout.size.width + decLayout.size.width + with(densityLocal) { 4.dp.toPx() }
+
+                                            // Conversión segura: usar values numéricos para comparar y reducir
+                                            val pfValue = pf.value
+                                            val dfValue = df.value
+                                            val minValue = minFont.value
+
+                                            if (totalTextWidth <= availablePx || (pfValue <= minValue && dfValue <= minValue)) break
+
+                                            // Reducir gradualmente: calcular nuevo valor en float y convertir a .sp
+                                            val newPf = (pfValue - 1f).coerceAtLeast(minValue)
+                                            val newDf = (dfValue - 1f).coerceAtLeast(minValue)
+                                            pf = newPf.sp
+                                            df = newDf.sp
+                                        }
+
+                                        priceFont = pf
+                                        decFont = df
+                                    }
+                                }
+
+                                Column(modifier = Modifier.fillMaxWidth().padding(chipPadding), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(title, color = color, fontWeight = FontWeight.SemiBold, fontSize = titleFont)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.Center) {
+                                        Text(text = "Q$intPart", color = color, fontWeight = FontWeight.ExtraBold, fontSize = priceFont)
+                                        Text(text = ".${decPart}", color = color, fontWeight = FontWeight.ExtraBold, fontSize = decFont, modifier = Modifier.padding(start = 4.dp))
+                                    }
+                                }
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                        // Tres chips con el mismo estilo y altura flexible (si el número no cabe, el chip crecerá)
+                        Box(modifier = Modifier.weight(1f)) { PriceChip("VENTA", item.pricePerUnit, Color(0xFF2E7D32)) }
+                        Box(modifier = Modifier.weight(1f)) { PriceChip("COSTO", item.costPrice, Color(0xFFF57C00)) }
+                        Box(modifier = Modifier.weight(1f)) { PriceChip("TOTAL", totalValue, Color(0xFFD32F2F)) }
 
-                    // Total de unidades: número grande en rojo y etiqueta pequeña debajo
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "${item.quantity}",
-                            fontSize = 36.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        Text(
-                            text = "unidades",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        // Si quieres un chip de unidades en esta fila, descomenta y usa heightIn(min = chipMinHeight)
+                        /*
+                        Card(
+                            modifier = Modifier.width(110.dp).heightIn(min = chipMinHeight),
+                            shape = chipShape,
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = BorderStroke(0.dp, Color.Transparent),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                        ) {
+                            Column(modifier = Modifier.fillMaxSize().padding(chipPadding), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(text = "${item.quantity}", color = Color(0xFFD32F2F), fontWeight = FontWeight.ExtraBold, fontSize = 28.sp)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = "unidades", style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp), color = Color(0xFF9E9E9E))
+                            }
+                        }
+                        */
                     }
                 }
             }

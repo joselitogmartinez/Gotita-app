@@ -17,13 +17,16 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 
+
 @Composable
 fun AddProductDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String, Double) -> Unit
+    onConfirm: (String, Double, Double, String) -> Unit
 ) {
     var productName by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+    var costPrice by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -36,10 +39,10 @@ fun AddProductDialog(
         },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Text(
-                    "Ingresa el nombre del producto y el precio unitario. Podrás agregar stock posteriormente.",
+                    "Ingresa el nombre del producto, la descripción y los precios. Podrás agregar stock posteriormente.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -51,6 +54,30 @@ fun AddProductDialog(
                     placeholder = { Text("Ej: AGUA PURA 500ML") },
                     singleLine = true
                 )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Descripción") },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Breve descripción del producto") },
+                    maxLines = 3
+                )
+                // Mostrar primero el campo Precio de Costo (ahora arriba del Precio Unitario)
+                OutlinedTextField(
+                    value = costPrice,
+                    onValueChange = {
+                        if (it.matches(Regex("^\\d*\\.?\\d*$")) || it.isEmpty()) {
+                            costPrice = it
+                        }
+                    },
+                    label = { Text("Precio de Costo (Q)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Ej: 3.00") },
+                    prefix = { Text("Q ") },
+                    singleLine = true
+                )
+                // Luego el campo Precio Unitario (Precio de Venta)
                 OutlinedTextField(
                     value = price,
                     onValueChange = {
@@ -71,8 +98,9 @@ fun AddProductDialog(
             Button(
                 onClick = {
                     val priceDouble = price.toDoubleOrNull() ?: 0.0
+                    val costDouble = costPrice.toDoubleOrNull() ?: 0.0
                     if (productName.isNotBlank()) {
-                        onConfirm(productName.trim(), priceDouble)
+                        onConfirm(productName.trim(), priceDouble, costDouble, description.trim())
                     }
                 },
                 enabled = productName.isNotBlank() && (price.toDoubleOrNull() ?: -1.0) >= 0.0
@@ -99,6 +127,8 @@ fun InventoryDetailDialog(
     var isEditing by remember { mutableStateOf(false) }
     var editedName by remember { mutableStateOf(item.productName) }
     var editedPrice by remember { mutableStateOf(item.pricePerUnit.toString()) }
+    var editedCost by remember { mutableStateOf(item.costPrice.toString()) }
+    var editedDescription by remember { mutableStateOf(item.description) }
 
     val numberFormat = NumberFormat.getCurrencyInstance(Locale("es", "GT"))
     val dateFormat = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
@@ -125,11 +155,12 @@ fun InventoryDetailDialog(
                 // Información principal
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        containerColor = MaterialTheme.colorScheme.surface
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(12.dp)
+                        modifier = Modifier.padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         if (isEditing) {
                             OutlinedTextField(
@@ -137,6 +168,28 @@ fun InventoryDetailDialog(
                                 onValueChange = { editedName = it },
                                 label = { Text("Nombre del Producto") },
                                 modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = editedDescription,
+                                onValueChange = { editedDescription = it },
+                                label = { Text("Descripción") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 3
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = editedCost,
+                                onValueChange = {
+                                    if (it.matches(Regex("^\\d*\\.?\\d*$")) || it.isEmpty()) {
+                                        editedCost = it
+                                    }
+                                },
+                                label = { Text("Precio de Costo (Q)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth(),
+                                prefix = { Text("Q ") },
                                 singleLine = true
                             )
                             Spacer(modifier = Modifier.height(8.dp))
@@ -154,11 +207,60 @@ fun InventoryDetailDialog(
                                 singleLine = true
                             )
                         } else {
-                            DetailItem("Producto", item.productName)
-                            DetailItem("Cantidad", "${item.quantity} unidades")
-                            DetailItem("Precio Unitario", if (item.pricePerUnit > 0) numberFormat.format(item.pricePerUnit) else "Q0.00")
-                            DetailItem("Valor Total", if (item.quantity > 0 && item.pricePerUnit > 0) numberFormat.format(item.quantity * item.pricePerUnit) else "Q0.00")
-                            DetailItem("Estado", if (item.isAvailable) "Disponible" else "No disponible")
+                            // Sección: Producto y descripción
+                            SectionContainer(title = "Información del Producto") {
+                                LabelBlock(label = "Producto", value = item.productName, prominent = true)
+                                if (item.description.isNotBlank()) {
+                                    Spacer(Modifier.height(8.dp))
+                                    LabelBlock(label = "Descripción", value = item.description)
+                                }
+                            }
+
+                            // Sección: Cantidad y Estado (dos columnas)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                SectionContainer(modifier = Modifier.weight(1f), title = "Cantidad") {
+                                    // Evitamos repetir "Cantidad" dentro del bloque ya que el título de la sección lo muestra
+                                    LabelBlock(label = "Cantidad", value = "${item.quantity} unidades", showLabel = false)
+                                }
+                                SectionContainer(modifier = Modifier.weight(1f), title = "Estado") {
+                                    // Evitamos repetir "Estado" dentro del bloque
+                                    LabelBlock(label = "Estado", value = if (item.isAvailable) "Disponible" else "No disponible", showLabel = false)
+                                }
+                            }
+
+                            // Sección: Precios (dos columnas) y total
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                SectionContainer(modifier = Modifier.weight(1f), title = "Precio de Costo") {
+                                    // El título de la sección ya muestra "Precio de Costo"
+                                    LabelBlock(
+                                        label = "Precio de Costo",
+                                        value = if (item.costPrice > 0) numberFormat.format(item.costPrice) else "Q0.00",
+                                        showLabel = false
+                                    )
+                                }
+                                SectionContainer(modifier = Modifier.weight(1f), title = "Precio Unitario") {
+                                    LabelBlock(
+                                        label = "Precio Unitario",
+                                        value = if (item.pricePerUnit > 0) numberFormat.format(item.pricePerUnit) else "Q0.00",
+                                        showLabel = false
+                                    )
+                                }
+                            }
+                            SectionContainer(title = "Valor Total") {
+                                // Valor Total ya está como título de la sección
+                                LabelBlock(
+                                    label = "Valor Total",
+                                    value = if (item.quantity > 0 && item.pricePerUnit > 0) numberFormat.format(item.quantity * item.pricePerUnit) else "Q0.00",
+                                    prominent = true,
+                                    showLabel = false
+                                )
+                            }
                         }
                     }
                 }
@@ -200,7 +302,8 @@ fun InventoryDetailDialog(
                     IconButton(
                         onClick = {
                             val priceDouble = editedPrice.toDoubleOrNull() ?: 0.0
-                            onEdit(item.copy(productName = editedName.trim(), pricePerUnit = priceDouble))
+                            val costDouble = editedCost.toDoubleOrNull() ?: 0.0
+                            onEdit(item.copy(productName = editedName.trim(), pricePerUnit = priceDouble, costPrice = costDouble, description = editedDescription.trim()))
                         },
                         enabled = editedName.isNotBlank() && (editedPrice.toDoubleOrNull() ?: -1.0) >= 0.0
                     ) {
@@ -268,4 +371,54 @@ private fun DetailItem(label: String, value: String) {
             textAlign = TextAlign.End
         )
     }
+}
+
+// Modern section container with subtle background and rounded corners
+@Composable
+private fun SectionContainer(
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Column(modifier = modifier) {
+        if (title != null) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(6.dp))
+        }
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+                content()
+            }
+        }
+    }
+}
+
+// Label above value block used inside sections
+@Composable
+private fun LabelBlock(
+    label: String,
+    value: String,
+    prominent: Boolean = false,
+    showLabel: Boolean = true
+) {
+    if (showLabel) {
+        Text(
+            text = label.uppercase(),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(Modifier.height(2.dp))
+    }
+    Text(
+        text = value,
+        style = if (prominent) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface
+    )
 }

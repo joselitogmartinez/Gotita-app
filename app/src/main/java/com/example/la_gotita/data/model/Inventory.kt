@@ -8,6 +8,8 @@ data class InventoryItem(
     val productName: String = "",
     val quantity: Int = 0,
     val pricePerUnit: Double = 0.0, // En quetzales
+    val costPrice: Double = 0.0, // Precio de costo en quetzales (nuevo campo)
+    val description: String = "", // Descripción del producto (nuevo campo)
     val isAvailable: Boolean = true,
     val entryDate: Date = Date(),
     val registeredBy: String = "", // UID del usuario que registró

@@ -24,7 +24,7 @@ data class InventoryUiState(
 )
 
 class InventoryViewModel(
-    private val repository: InventoryRepository = InventoryRepository()
+    private val repository: InventoryRepository = InventoryRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InventoryUiState())
@@ -55,11 +55,13 @@ class InventoryViewModel(
     fun addProduct(
         productName: String,
         pricePerUnit: Double,
+        costPrice: Double,
+        description: String,
         context: Context
     ) {
         viewModelScope.launch {
             try {
-                repository.addProduct(productName, pricePerUnit)
+                repository.addProduct(productName, pricePerUnit, costPrice, description)
                 Toast.makeText(context, "Producto agregado", Toast.LENGTH_SHORT).show()
                 loadInventory()
             } catch (e: Exception) {

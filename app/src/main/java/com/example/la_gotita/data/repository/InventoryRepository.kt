@@ -8,7 +8,7 @@ import java.util.*
 /**
  * Repositorio en memoria temporal. Sustituir por implementación real (Room / Firestore) más adelante.
  */
-class InventoryRepository {
+object InventoryRepository {
     // Almacenamiento en memoria
     private val items = mutableListOf<InventoryItem>()
 
@@ -18,9 +18,21 @@ class InventoryRepository {
         return items.toList()
     }
 
+    suspend fun getById(itemId: String): InventoryItem? {
+        delay(10)
+        return items.find { it.id == itemId }
+    }
+
+    suspend fun getByProductId(productId: String): InventoryItem? {
+        delay(10)
+        return items.find { it.productId == productId }
+    }
+
     suspend fun addProduct(
         productName: String,
         pricePerUnit: Double = 0.0,
+        costPrice: Double = 0.0,
+        description: String = "",
         registeredById: String = "",
         registeredByName: String = ""
     ): InventoryItem {
@@ -31,6 +43,8 @@ class InventoryRepository {
             productName = productName,
             quantity = 0,
             pricePerUnit = pricePerUnit,
+            costPrice = costPrice,
+            description = description,
             batchNumber = generateBatchCode(productName),
             registeredBy = registeredById,
             registeredByName = registeredByName,
@@ -54,6 +68,27 @@ class InventoryRepository {
                 quantity = existingItem.quantity + quantity,
                 pricePerUnit = if (pricePerUnit > 0) pricePerUnit else existingItem.pricePerUnit,
                 batchNumber = batchNumber ?: existingItem.batchNumber,
+                notes = if (notes.isNotBlank()) notes else existingItem.notes
+            )
+            val index = items.indexOfFirst { it.id == existingItem.id }
+            if (index != -1) {
+                items[index] = updatedItem
+            }
+            updatedItem
+        } else null
+    }
+
+    suspend fun removeStock(
+        productId: String,
+        quantity: Int,
+        notes: String
+    ): InventoryItem? {
+        delay(50)
+        val existingItem = items.find { it.productId == productId }
+        return if (existingItem != null) {
+            val newQty = (existingItem.quantity - quantity).coerceAtLeast(0)
+            val updatedItem = existingItem.copy(
+                quantity = newQty,
                 notes = if (notes.isNotBlank()) notes else existingItem.notes
             )
             val index = items.indexOfFirst { it.id == existingItem.id }

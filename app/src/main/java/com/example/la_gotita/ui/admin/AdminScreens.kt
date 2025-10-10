@@ -39,7 +39,10 @@ import com.example.la_gotita.ui.components.ModuleCard
 import com.example.la_gotita.ui.components.ModuleItemData
 import com.example.la_gotita.data.model.User
 import com.example.la_gotita.data.model.UserRole
+import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
+
+//actualizar rutas y nombres
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,6 +63,11 @@ fun AdminDashboardScaffold(
             ?: adminDrawerNavItemsList.find { it.route == currentAdminRoute }?.title
             ?: "Admin"
     }
+
+    // Obtener el primer nombre del usuario autenticado (para saludo en el TopAppBar)
+    val firebaseUser = FirebaseAuth.getInstance().currentUser
+    val fullNameForGreeting = firebaseUser?.displayName ?: firebaseUser?.email ?: "Usuario"
+    val firstName = fullNameForGreeting.split(" ").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Usuario"
 
     val canPopInner = adminContentNavController.previousBackStackEntry != null
     BackHandler(enabled = drawerState.isOpen || canPopInner) {
@@ -113,7 +121,13 @@ fun AdminDashboardScaffold(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(currentScreenTitle) },
+                    title = {
+                        if (currentAdminRoute == AppScreenRoutes.ADMIN_HOME) {
+                            Text("Bienvenido $firstName")
+                        } else {
+                            Text(currentScreenTitle)
+                        }
+                    },
                     navigationIcon = {
                         IconButton(onClick = { scope.launch { drawerState.open() } }) {
                             Icon(Icons.Filled.Menu, contentDescription = "Abrir menú lateral")

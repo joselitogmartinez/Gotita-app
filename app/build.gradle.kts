@@ -84,6 +84,9 @@ dependencies {
     // Gson for Type Converters
     implementation(libs.google.gson)
 
+    // PDF Generation
+    implementation("com.itextpdf:itext7-core:7.2.5")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
