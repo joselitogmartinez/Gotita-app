@@ -5,3 +5,4 @@ plugins {
     // La línea de kotlin.compose ha sido eliminada
     alias(libs.plugins.google.gms.google.services) apply false
 }
+

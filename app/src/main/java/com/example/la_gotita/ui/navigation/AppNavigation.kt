@@ -130,7 +130,8 @@ fun AppNavigation(
             val productId = backStackEntry.arguments?.getString("productId") ?: return@composable
             InventoryHistoryScreen(
                 productId = productId,
-                onBack = { appNavController.popBackStack() }
+                onBack = { appNavController.popBackStack() },
+                authViewModel = authViewModel
             )
         }
     }

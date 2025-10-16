@@ -75,6 +75,10 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth.ktx)
     implementation(libs.firebase.firestore.ktx)
+    implementation("com.google.firebase:firebase-storage-ktx:20.2.1")
+
+    // Coil para cargar imágenes remotas/locales en Compose
+    implementation(libs.coil.compose)
 
     // Room
     implementation(libs.androidx.room.runtime)

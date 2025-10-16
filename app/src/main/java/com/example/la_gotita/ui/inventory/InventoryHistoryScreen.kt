@@ -5,7 +5,12 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -13,9 +18,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.IosShare
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,8 +28,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.la_gotita.data.model.InventoryMovement
 import com.example.la_gotita.data.model.MovementSource
@@ -55,12 +63,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.foundation.BorderStroke
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun InventoryHistoryScreen(
     productId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    authViewModel: com.example.la_gotita.ui.login.AuthViewModel // <-- nuevo parámetro
 ) {
     val viewModel: InventoryHistoryViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
@@ -144,6 +154,11 @@ fun InventoryHistoryScreen(
         var showSheet by rememberSaveable { mutableStateOf(false) }
         var sheetType by rememberSaveable { mutableStateOf<MovementType?>(null) }
         var qtyText by rememberSaveable { mutableStateOf("") }
+        var descriptionText by rememberSaveable { mutableStateOf("") }
+        var movementToEdit by remember { mutableStateOf<InventoryMovement?>(null) }
+        var movementToVoid by remember { mutableStateOf<InventoryMovement?>(null) }
+        var showVoidDialog by remember { mutableStateOf(false) }
+        var voidReasonText by rememberSaveable { mutableStateOf("") }
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
         // Contenedor principal con overlay para botones flotantes
@@ -274,7 +289,24 @@ fun InventoryHistoryScreen(
                                     Text("Sin movimientos en el mes seleccionado", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             } else {
-                                MovementList(uiState.movements, listState)
+                                MovementList(
+                                    movements = uiState.movements,
+                                    listState = listState,
+                                    onEditMovement = { movementToEditParam ->
+                                        // Abrir el diálogo de edición con los datos del movimiento
+                                        movementToEdit = movementToEditParam
+                                        qtyText = movementToEditParam.quantity.toString()
+                                        descriptionText = movementToEditParam.description
+                                        sheetType = movementToEditParam.type
+                                        showSheet = true
+                                    },
+                                    onVoidMovement = { movementToVoidParam ->
+                                        // Abrir el diálogo de anulación
+                                        movementToVoid = movementToVoidParam
+                                        voidReasonText = ""
+                                        showVoidDialog = true
+                                    }
+                                )
                             }
                         }
                     }
@@ -329,8 +361,10 @@ fun InventoryHistoryScreen(
                     // SALIDA a la izquierda
                     ExtendedFloatingActionButton(
                         onClick = {
+                            movementToEdit = null // Limpiar modo edición
                             sheetType = MovementType.EXIT
                             qtyText = ""
+                            descriptionText = ""
                             showSheet = true
                         },
                         icon = { Icon(Icons.Filled.Remove, contentDescription = "- Salida") },
@@ -342,8 +376,10 @@ fun InventoryHistoryScreen(
                     // INGRESO a la derecha
                     ExtendedFloatingActionButton(
                         onClick = {
+                            movementToEdit = null // Limpiar modo edición
                             sheetType = MovementType.ENTRY
                             qtyText = ""
+                            descriptionText = ""
                             showSheet = true
                         },
                         icon = { Icon(Icons.Filled.Add, contentDescription = "+ Ingreso") },
@@ -359,7 +395,10 @@ fun InventoryHistoryScreen(
         // Panel inferior para registrar cantidad
         if (showSheet && sheetType != null) {
             ModalBottomSheet(
-                onDismissRequest = { showSheet = false },
+                onDismissRequest = {
+                    showSheet = false
+                    movementToEdit = null
+                },
                 sheetState = sheetState
             ) {
                 Column(
@@ -369,8 +408,14 @@ fun InventoryHistoryScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     val isEntry = sheetType == MovementType.ENTRY
+                    val isEditMode = movementToEdit != null
+
                     Text(
-                        if (isEntry) "Registrar ingreso" else "Registrar salida",
+                        if (isEditMode) {
+                            if (isEntry) "Editar ingreso" else "Editar salida"
+                        } else {
+                            if (isEntry) "Registrar ingreso" else "Registrar salida"
+                        },
                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold)
                     )
                     OutlinedTextField(
@@ -382,7 +427,6 @@ fun InventoryHistoryScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     // Campo de descripción
-                    var descriptionText by rememberSaveable { mutableStateOf("") }
                     OutlinedTextField(
                         value = descriptionText,
                         onValueChange = { descriptionText = it },
@@ -392,28 +436,115 @@ fun InventoryHistoryScreen(
                         modifier = Modifier.fillMaxWidth()
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedButton(onClick = { showSheet = false }) { Text("Cancelar") }
+                        OutlinedButton(onClick = {
+                            showSheet = false
+                            movementToEdit = null
+                        }) { Text("Cancelar") }
                         val qty = qtyText.toIntOrNull() ?: 0
                         Button(
                             onClick = {
                                 if (qty > 0) {
-                                    if (isEntry) {
-                                        viewModel.registerEntry(qty, description = descriptionText, userName = "", context = context)
+                                    if (isEditMode) {
+                                        // Modo edición: actualizar el movimiento existente
+                                        val movement = movementToEdit!!
+                                        viewModel.updateMovement(
+                                            movementId = movement.id,
+                                            oldQuantity = movement.quantity,
+                                            newQuantity = qty,
+                                            newDescription = descriptionText,
+                                            movementType = sheetType!!,
+                                            context = context
+                                        )
                                     } else {
-                                        viewModel.registerExit(qty, description = descriptionText, userName = "", context = context)
+                                        // Modo creación: registrar nuevo movimiento
+                                        if (isEntry) {
+                                            viewModel.registerEntry(qty, description = descriptionText, context = context, authViewModel = authViewModel)
+                                        } else {
+                                            viewModel.registerExit(qty, description = descriptionText, context = context, authViewModel = authViewModel)
+                                        }
                                     }
                                     showSheet = false
+                                    movementToEdit = null
                                 }
                             },
                             enabled = qty > 0,
                             colors = if (isEntry) ButtonDefaults.buttonColors() else ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
-                            Text(if (isEntry) "Registrar Ingreso" else "Registrar Salida")
+                            Text(
+                                if (isEditMode) {
+                                    if (isEntry) "Actualizar Ingreso" else "Actualizar Salida"
+                                } else {
+                                    if (isEntry) "Registrar Ingreso" else "Registrar Salida"
+                                }
+                            )
                         }
                     }
                     Spacer(Modifier.height(8.dp))
                 }
             }
+        }
+
+        // Diálogo de anulación
+        if (showVoidDialog && movementToVoid != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showVoidDialog = false
+                    movementToVoid = null
+                    voidReasonText = ""
+                },
+                title = { Text("Anular movimiento", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column {
+                        Text("¿Está seguro de anular este movimiento?", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("Esta acción revertirá el stock asociado.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Text("Justificación (requerida):", fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = voidReasonText,
+                            onValueChange = { voidReasonText = it },
+                            placeholder = { Text("Ingrese el motivo de la anulación") },
+                            singleLine = false,
+                            maxLines = 3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (voidReasonText.isNotBlank()) {
+                                // Confirmar anulación con los parámetros correctos
+                                viewModel.voidMovement(
+                                    movementId = movementToVoid!!.id,
+                                    movementType = movementToVoid!!.type,
+                                    quantity = movementToVoid!!.quantity,
+                                    voidReason = voidReasonText,
+                                    context = context,
+                                    authViewModel = authViewModel
+                                )
+                                showVoidDialog = false
+                                movementToVoid = null
+                                voidReasonText = ""
+                            }
+                        },
+                        enabled = voidReasonText.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F))
+                    ) {
+                        Text("Anular movimiento")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showVoidDialog = false
+                        movementToVoid = null
+                        voidReasonText = ""
+                    }) {
+                        Text("Cancelar")
+                    }
+                }
+            )
         }
     }
 }
@@ -421,12 +552,19 @@ fun InventoryHistoryScreen(
 @Composable
 private fun MovementList(
     movements: List<InventoryMovement>,
-    listState: LazyListState
+    listState: LazyListState,
+    onEditMovement: (InventoryMovement) -> Unit,
+    onVoidMovement: (InventoryMovement) -> Unit // Nuevo callback para anulación
 ) {
     val df = remember { SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) }
     LazyColumn(state = listState, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         items(movements) { movement ->
-            MovementItem(movement = movement, dateFormatter = df)
+            MovementItem(
+                movement = movement,
+                dateFormatter = df,
+                onSwipeEdit = { onEditMovement(movement) },
+                onSwipeVoid = { onVoidMovement(movement) } // Pasar el movimiento a anular
+            )
         }
     }
 }
@@ -434,180 +572,385 @@ private fun MovementList(
 @Composable
 private fun MovementItem(
     movement: InventoryMovement,
-    dateFormatter: SimpleDateFormat
+    dateFormatter: SimpleDateFormat,
+    onSwipeEdit: () -> Unit,
+    onSwipeVoid: () -> Unit
 ) {
-    // Eliminar la flecha y ajustar el comportamiento para expandir detalles al tocar
     var expanded by remember { mutableStateOf(false) }
 
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val cardBgColor = if (isDark) MaterialTheme.colorScheme.surface else Color(0xFFF5F5F5)
+
+    // Cambiar colores si el movimiento está anulado
+    val cardBgColor = when {
+        movement.isVoided && isDark -> Color(0xFF424242)
+        movement.isVoided && !isDark -> Color(0xFF9E9E9E)
+        isDark -> MaterialTheme.colorScheme.surface
+        else -> Color(0xFFF5F5F5)
+    }
     val cardBorderColor = if (isDark) Color.Transparent else Color(0xFFBDBDBD)
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { expanded = !expanded }
-            .border(width = 1.dp, color = cardBorderColor, shape = RoundedCornerShape(12.dp)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = cardBgColor)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp) // Reducido de 16dp a 12dp para ser más compacto
-        ) {
-            // Línea principal: fecha/hora y tipo de movimiento
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+    // Color para el botón de editar (azul) y anular (rojo)
+    val swipeEditColor = if (isDark) Color(0xFF42A5F5) else Color(0xFF1976D2)
+    val swipeVoidColor = if (isDark) Color(0xFFEF5350) else Color(0xFFD32F2F)
+
+    // Dimensiones para el swipe
+    val density = LocalDensity.current
+    val maxRevealPx = with(density) { 96.dp.toPx() }
+
+    // Animación del desplazamiento (bidireccional)
+    val scope = rememberCoroutineScope()
+    val reveal = remember { Animatable(0f) } // positivo = derecha (editar), negativo = izquierda (anular)
+
+    // Estado para la altura de la tarjeta
+    var cardHeightPx by remember { mutableStateOf(0f) }
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // Cápsula de EDITAR en el área revelada (swipe derecha, aparece a la izquierda)
+        if (reveal.value > 0f && cardHeightPx > 0f && !movement.isVoided) {
+            val capsuleWidthPx = reveal.value.coerceAtLeast(cardHeightPx)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(with(density) { reveal.value.toDp() })
+                    .align(Alignment.CenterStart),
+                contentAlignment = Alignment.CenterStart
             ) {
-                // Fecha y hora
-                Text(
-                    text = dateFormatter.format(movement.date),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-
-                // Tipo de movimiento con texto más pequeño
-                Text(
-                    text = if (movement.type == MovementType.ENTRY) "ENTRADA" else "SALIDA",
-                    style = MaterialTheme.typography.bodyMedium.copy( // Reducido de headlineSmall
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 14.sp // Reducido de 16.sp a 14.sp
-                    ),
-                    color = if (movement.type == MovementType.ENTRY)
-                        Color(0xFF2E7D32) else Color(0xFFD32F2F)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(6.dp)) // Reducido de 8dp a 6dp
-
-            // Segunda línea: descripción y cantidad
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Descripción del movimiento
-                val movementDescription = when {
-                    movement.description.isNotBlank() -> movement.description
-                    movement.source == MovementSource.SALE -> "Salida por venta"
-                    movement.source == MovementSource.MANUAL && movement.type == MovementType.EXIT -> "Salida manual"
-                    movement.source == MovementSource.MANUAL && movement.type == MovementType.ENTRY -> "Entrada manual"
-                    else -> "Sin descripción"
-                }
-
-                Text(
-                    text = movementDescription,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
-                )
-
-                // Cantidad con tamaño reducido
-                Text(
-                    text = "${movement.quantity}",
-                    style = MaterialTheme.typography.titleLarge.copy( // Reducido de headlineMedium
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 20.sp // Reducido de 24.sp a 20.sp
-                    ),
-                    color = if (movement.type == MovementType.ENTRY)
-                        Color(0xFF2E7D32) else Color(0xFFD32F2F)
-                )
-            }
-
-            // Detalles expandibles
-            if (expanded) {
-                Spacer(modifier = Modifier.height(8.dp)) // Reducido padding superior
-
-                // Divisor visual más delgado
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 8.dp), // Reducido de 12dp a 8dp
-                    thickness = 0.5.dp, // Más delgado
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp) // Reducido de 8dp a 6dp
+                Box(
+                    modifier = Modifier
+                        .width(with(density) { capsuleWidthPx.toDp() })
+                        .height(with(density) { cardHeightPx.toDp() })
+                        .background(color = swipeEditColor, shape = RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Usuario que realizó la operación
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Usuario:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = if (movement.userName.isNotBlank()) movement.userName else "No especificado",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                    }
+                    Icon(
+                        imageVector = Icons.Filled.Edit,
+                        contentDescription = "Editar",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
 
-                    // Cliente (si fue por venta)
-                    if (movement.source == MovementSource.SALE) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "Cliente:",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "Cliente de venta", // Placeholder hasta que tengamos datos del cliente
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+        // Cápsula de ANULAR en el área revelada (swipe izquierda, aparece a la derecha)
+        if (reveal.value < 0f && cardHeightPx > 0f && !movement.isVoided) {
+            val capsuleWidthPx = (-reveal.value).coerceAtLeast(cardHeightPx)
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .width(with(density) { (-reveal.value).toDp() })
+                    .align(Alignment.CenterEnd),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(with(density) { capsuleWidthPx.toDp() })
+                        .height(with(density) { cardHeightPx.toDp() })
+                        .background(color = swipeVoidColor, shape = RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Remove,
+                        contentDescription = "Anular",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // Contenido de la tarjeta con swipe bidireccional
+        Box(
+            modifier = Modifier
+                .onGloballyPositioned { coords: LayoutCoordinates -> cardHeightPx = coords.size.height.toFloat() }
+                .offset { IntOffset(x = reveal.value.roundToInt(), y = 0) }
+                .draggable(
+                    orientation = Orientation.Horizontal,
+                    enabled = !movement.isVoided, // Deshabilitar swipe si está anulado
+                    state = rememberDraggableState { delta ->
+                        val newTarget = (reveal.value + delta).coerceIn(-maxRevealPx, maxRevealPx)
+                        scope.launch { reveal.snapTo(newTarget) }
+                    },
+                    onDragStopped = {
+                        val threshold = maxRevealPx * 0.6f
+                        scope.launch {
+                            if (reveal.value >= threshold) {
+                                // Swipe derecha -> Editar
+                                reveal.animateTo(
+                                    targetValue = (maxRevealPx + with(density) { 8.dp.toPx() }).coerceAtMost(maxRevealPx + 18f),
+                                    animationSpec = tween(120, easing = FastOutSlowInEasing)
+                                )
+                                reveal.animateTo(maxRevealPx, animationSpec = tween(120, easing = FastOutSlowInEasing))
+                                onSwipeEdit()
+                            } else if (reveal.value <= -threshold) {
+                                // Swipe izquierda -> Anular
+                                reveal.animateTo(
+                                    targetValue = -(maxRevealPx + with(density) { 8.dp.toPx() }).coerceAtLeast(-(maxRevealPx + 18f)),
+                                    animationSpec = tween(120, easing = FastOutSlowInEasing)
+                                )
+                                reveal.animateTo(-maxRevealPx, animationSpec = tween(120, easing = FastOutSlowInEasing))
+                                onSwipeVoid()
+                            }
+                            reveal.animateTo(0f, animationSpec = tween(260, easing = FastOutSlowInEasing))
                         }
                     }
-
-                    // Saldo disponible de unidades
+                )
+        ) {
+            Card(
+                onClick = { expanded = !expanded },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(width = 1.dp, color = cardBorderColor, shape = RoundedCornerShape(12.dp)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = cardBgColor)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                ) {
+                    // Línea principal: fecha/hora y tipo de movimiento
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Fecha y hora
                         Text(
-                            text = "Saldo disponible:",
+                            text = dateFormatter.format(movement.date),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
+                            color = if (movement.isVoided) Color.Gray else MaterialTheme.colorScheme.onSurfaceVariant
                         )
+
+                        // Tipo de movimiento con texto más pequeño
                         Text(
-                            text = "${movement.availableAfter} unidades",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
+                            text = if (movement.isVoided) {
+                                if (movement.type == MovementType.ENTRY) "ENTRADA ANULADA" else "SALIDA ANULADA"
+                            } else {
+                                if (movement.type == MovementType.ENTRY) "ENTRADA" else "SALIDA"
+                            },
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp
+                            ),
+                            color = if (movement.isVoided) {
+                                Color.Gray
+                            } else if (movement.type == MovementType.ENTRY) {
+                                Color(0xFF2E7D32)
+                            } else {
+                                Color(0xFFD32F2F)
+                            }
                         )
                     }
 
-                    // Tipo de fuente
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Segunda línea: descripción y cantidad
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Descripción del movimiento - mostrar justificación si está anulado
+                        val movementDescription = when {
+                            movement.isVoided && movement.description.isNotBlank() -> movement.description // Muestra "Anulado: X unidades - justificación"
+                            movement.description.isNotBlank() -> movement.description
+                            movement.source == MovementSource.SALE -> "Salida por venta"
+                            movement.source == MovementSource.MANUAL && movement.type == MovementType.EXIT -> "Salida manual"
+                            movement.source == MovementSource.MANUAL && movement.type == MovementType.ENTRY -> "Entrada manual"
+                            else -> "Sin descripción"
+                        }
+
                         Text(
-                            text = "Fuente:",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.Medium
+                            text = movementDescription,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (movement.isVoided) Color.Gray else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.weight(1f)
                         )
+
+                        // Cantidad - muestra 0 si está anulado
                         Text(
-                            text = when (movement.source) {
-                                MovementSource.MANUAL -> "Manual"
-                                MovementSource.SALE -> "Venta"
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface
+                            text = if (movement.isVoided) "0" else "${movement.quantity}",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp
+                            ),
+                            color = if (movement.isVoided) {
+                                Color.Gray
+                            } else if (movement.type == MovementType.ENTRY) {
+                                Color(0xFF2E7D32)
+                            } else {
+                                Color(0xFFD32F2F)
+                            }
                         )
+                    }
+
+                    // Detalles expandibles
+                    if (expanded) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Divisor visual más delgado
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            thickness = 0.5.dp,
+                            color = MaterialTheme.colorScheme.outlineVariant
+                        )
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            // Usuario que realizó la operación
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Usuario:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = if (movement.userName.isNotBlank()) movement.userName else "No especificado",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (movement.isVoided) Color.Gray else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // Cliente (si fue por venta)
+                            if (movement.source == MovementSource.SALE) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Cliente:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "Cliente de venta",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (movement.isVoided) Color.Gray else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+
+                            // Saldo disponible de unidades
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Saldo disponible:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "${movement.availableAfter} unidades",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (movement.isVoided) Color.Gray else MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+
+                            // Tipo de fuente
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Fuente:",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = when (movement.source) {
+                                        MovementSource.MANUAL -> "Manual"
+                                        MovementSource.SALE -> "Venta"
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (movement.isVoided) Color.Gray else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+
+                            // Información de anulación (si está anulado)
+                            if (movement.isVoided) {
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(vertical = 8.dp),
+                                    thickness = 0.5.dp,
+                                    color = Color(0xFFEF5350)
+                                )
+
+                                Text(
+                                    text = "MOVIMIENTO ANULADO",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = Color(0xFFEF5350),
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Anulado por:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = if (movement.voidedBy.isNotBlank()) movement.voidedBy else "No especificado",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Gray
+                                    )
+                                }
+
+                                if (movement.voidedAt != null) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "Fecha anulación:",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                        Text(
+                                            text = dateFormatter.format(movement.voidedAt),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Justificación:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = if (movement.voidReason.isNotBlank()) movement.voidReason else "Sin justificación",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = Color.Gray,
+                                        modifier = Modifier.weight(1f),
+                                        textAlign = TextAlign.End
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

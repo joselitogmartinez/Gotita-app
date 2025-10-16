@@ -1,0 +1,49 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Función simple para verificar autenticación
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // REGLAS ULTRA-PERMISIVAS PARA DESARROLLO
+    // Todos los usuarios autenticados pueden hacer TODO en todas las colecciones
+
+    match /users/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /products/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /inventory/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /movementHistory/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /invitations/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /posts/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /sales/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /clients/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+
+    // REGLA GENERAL: Cualquier colección no especificada
+    match /{document=**} {
+      allow read, write: if isSignedIn();
+    }
+  }
+}

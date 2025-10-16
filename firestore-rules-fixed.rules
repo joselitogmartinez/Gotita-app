@@ -1,0 +1,59 @@
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helpers mejorados
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Nueva función: verifica si es admin consultando el documento del usuario
+    function isAdmin() {
+      return isSignedIn() &&
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "ADMIN" &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.active == true;
+    }
+
+    // Función auxiliar para verificar role sin custom claims
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // Colección users: admins pueden listar y hacer CRUD completo
+    match /users/{userId} {
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list, update, delete: if isAdmin();
+    }
+
+    // Colección products: admins tienen CRUD completo; usuarios autenticados solo leen
+    match /products/{productId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Colección inventory: igual que products
+    match /inventory/{itemId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Colección movementHistory: usuarios leen solo de sus productos; admins todo
+    match /movementHistory/{movementId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Posts de ejemplo (si aplica)
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.authorId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    // Denegar todo lo demás
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

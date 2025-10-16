@@ -14,6 +14,10 @@ data class InventoryMovement(
     val description: String = "",
     val userName: String = "",
     val date: Date = Date(),
-     val source: MovementSource = MovementSource.MANUAL,
-    val availableAfter: Int = 0 // saldo disponible después del movimiento
+    val source: MovementSource = MovementSource.MANUAL,
+    val availableAfter: Int = 0, // saldo disponible después del movimiento
+    val isVoided: Boolean = false, // indica si el movimiento está anulado
+    val voidReason: String = "", // justificación de la anulación
+    val voidedAt: Date? = null, // fecha de anulación
+    val voidedBy: String = "" // usuario que anuló
 )

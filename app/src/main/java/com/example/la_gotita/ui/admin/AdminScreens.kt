@@ -66,7 +66,14 @@ fun AdminDashboardScaffold(
 
     // Obtener el primer nombre del usuario autenticado (para saludo en el TopAppBar)
     val firebaseUser = FirebaseAuth.getInstance().currentUser
-    val fullNameForGreeting = firebaseUser?.displayName ?: firebaseUser?.email ?: "Usuario"
+    val savedUserName = authViewModel.getSavedUserName(context)
+
+    // Priorizar nombre de Firebase, luego nombre guardado, luego email como fallback
+    val fullNameForGreeting = firebaseUser?.displayName
+        ?: savedUserName.takeIf { it != "Usuario" }
+        ?: firebaseUser?.email
+        ?: "Usuario"
+
     val firstName = fullNameForGreeting.split(" ").firstOrNull()?.replaceFirstChar { it.uppercase() } ?: "Usuario"
 
     val canPopInner = adminContentNavController.previousBackStackEntry != null

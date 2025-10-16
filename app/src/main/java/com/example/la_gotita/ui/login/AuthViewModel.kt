@@ -21,15 +21,18 @@ import kotlinx.coroutines.launch
 // SharedPreferences Constants
 private const val PREFS_NAME = "LaGotitaAppPrefs"
 private const val KEY_BIOMETRIC_ENABLED_FOR_USER_PREFIX = "biometric_enabled_for_"
-private const val KEY_LAST_BIOMETRIC_CANDIDATE_USER_ID = "last_biometric_candidate_user_id" // NUEVA CLAVE
+private const val KEY_LAST_BIOMETRIC_CANDIDATE_USER_ID = "last_biometric_candidate_user_id"
+private const val KEY_LAST_BIOMETRIC_CANDIDATE_EMAIL = "last_biometric_candidate_email"
+private const val KEY_LAST_BIOMETRIC_CANDIDATE_PASSWORD = "last_biometric_candidate_password"
+private const val KEY_USER_NAME = "user_name"
+private const val KEY_USER_EMAIL = "user_email"
 private const val TAG_AUTH_VIEW_MODEL = "AuthViewModel"
 
 data class LoginUiState(
     val isLoading: Boolean = false,
     val loginError: String? = null,
-    val firebaseUser: FirebaseUser? = null, // Usuario de Firebase (con sesión activa)
+    val firebaseUser: FirebaseUser? = null,
     val userAppRole: UserRole? = null
-    // pseudoLoggedInUserId eliminado
 )
 
 interface AuthBackend {
@@ -122,25 +125,88 @@ class AuthViewModel(
     }
 
     private fun setBiometricPreference(context: Context, userId: String, enabled: Boolean) {
-        Log.d(TAG_AUTH_VIEW_MODEL, "Setting biometric preference for user ${userId} to ${enabled}")
-        getPrefs(context).edit().putBoolean("${KEY_BIOMETRIC_ENABLED_FOR_USER_PREFIX}${userId}", enabled).apply()
+        Log.d(TAG_AUTH_VIEW_MODEL, "Setting biometric preference for user $userId to $enabled")
+        getPrefs(context).edit().putBoolean("$KEY_BIOMETRIC_ENABLED_FOR_USER_PREFIX$userId", enabled).apply()
     }
 
     private fun isBiometricPreferenceEnabled(context: Context, userId: String): Boolean {
-        val isEnabled = getPrefs(context).getBoolean("${KEY_BIOMETRIC_ENABLED_FOR_USER_PREFIX}${userId}", false)
-        Log.d(TAG_AUTH_VIEW_MODEL, "Checking biometric preference for user ${userId}. Is enabled: ${isEnabled}")
+        val isEnabled = getPrefs(context).getBoolean("$KEY_BIOMETRIC_ENABLED_FOR_USER_PREFIX$userId", false)
+        Log.d(TAG_AUTH_VIEW_MODEL, "Checking biometric preference for user $userId. Is enabled: $isEnabled")
         return isEnabled
     }
 
     private fun setLastBiometricCandidateUserId(context: Context, userId: String?) {
-        Log.d(TAG_AUTH_VIEW_MODEL, "Setting last biometric candidate user ID to: ${userId}")
+        Log.d(TAG_AUTH_VIEW_MODEL, "Setting last biometric candidate user ID to: $userId")
         getPrefs(context).edit().putString(KEY_LAST_BIOMETRIC_CANDIDATE_USER_ID, userId).apply()
     }
 
     private fun getLastBiometricCandidateUserId(context: Context): String? {
         val userId = getPrefs(context).getString(KEY_LAST_BIOMETRIC_CANDIDATE_USER_ID, null)
-        Log.d(TAG_AUTH_VIEW_MODEL, "Getting last biometric candidate user ID: ${userId}")
+        Log.d(TAG_AUTH_VIEW_MODEL, "Getting last biometric candidate user ID: $userId")
         return userId
+    }
+
+    private fun setLastBiometricCandidateEmail(context: Context, email: String?) {
+        Log.d(TAG_AUTH_VIEW_MODEL, "Setting last biometric candidate email to: $email")
+        getPrefs(context).edit().putString(KEY_LAST_BIOMETRIC_CANDIDATE_EMAIL, email).apply()
+    }
+
+    private fun getLastBiometricCandidateEmail(context: Context): String? {
+        val email = getPrefs(context).getString(KEY_LAST_BIOMETRIC_CANDIDATE_EMAIL, null)
+        Log.d(TAG_AUTH_VIEW_MODEL, "Getting last biometric candidate email: $email")
+        return email
+    }
+
+    private fun setLastBiometricCandidatePassword(context: Context, password: String?) {
+        Log.d(TAG_AUTH_VIEW_MODEL, "Setting last biometric candidate password.")
+        getPrefs(context).edit().putString(KEY_LAST_BIOMETRIC_CANDIDATE_PASSWORD, password).apply()
+    }
+
+    private fun getLastBiometricCandidatePassword(context: Context): String? {
+        val password = getPrefs(context).getString(KEY_LAST_BIOMETRIC_CANDIDATE_PASSWORD, null)
+        Log.d(TAG_AUTH_VIEW_MODEL, "Getting last biometric candidate password.")
+        return password
+    }
+
+    private fun setEncryptedCredentials(context: Context, email: String, password: String) {
+        val prefs = getPrefs(context)
+        prefs.edit()
+            .putString(KEY_LAST_BIOMETRIC_CANDIDATE_EMAIL, email)
+            .putString(KEY_LAST_BIOMETRIC_CANDIDATE_PASSWORD, password)
+            .apply()
+        Log.d(TAG_AUTH_VIEW_MODEL, "Encrypted credentials saved.")
+    }
+
+    private fun clearEncryptedCredentials(context: Context) {
+        val prefs = getPrefs(context)
+        prefs.edit()
+            .remove(KEY_LAST_BIOMETRIC_CANDIDATE_EMAIL)
+            .remove(KEY_LAST_BIOMETRIC_CANDIDATE_PASSWORD)
+            .apply()
+        Log.d(TAG_AUTH_VIEW_MODEL, "Encrypted credentials cleared.")
+    }
+
+    private fun setUserName(context: Context, userId: String) {
+        val userName = userId.split("@").firstOrNull() ?: ""
+        Log.d(TAG_AUTH_VIEW_MODEL, "Setting user name for $userId to $userName")
+        getPrefs(context).edit().putString(KEY_USER_NAME, userName).apply()
+    }
+
+    private fun getUserName(context: Context): String {
+        val userName = getPrefs(context).getString(KEY_USER_NAME, "")
+        Log.d(TAG_AUTH_VIEW_MODEL, "Getting user name: $userName")
+        return userName ?: ""
+    }
+
+    private fun setUserEmail(context: Context, email: String) {
+        Log.d(TAG_AUTH_VIEW_MODEL, "Setting user email to $email")
+        getPrefs(context).edit().putString(KEY_USER_EMAIL, email).apply()
+    }
+
+    private fun getUserEmail(context: Context): String {
+        val email = getPrefs(context).getString(KEY_USER_EMAIL, "")
+        Log.d(TAG_AUTH_VIEW_MODEL, "Getting user email: $email")
+        return email ?: ""
     }
     // --- End SharedPreferences Helpers ---
 
@@ -162,23 +228,20 @@ class AuthViewModel(
         }
     }
 
-    // Nueva función para que Splash decida flujo biométrico
     fun shouldAttemptBiometricOnLaunch(context: Context): Boolean {
-        // Mostrar biometría si existe un candidato y la preferencia está activa, independientemente de si hay sesión Firebase
         return getLastBiometricCandidateUserId(context)?.let { isBiometricPreferenceEnabled(context, it) } == true
     }
 
     fun attemptInitialBiometricLogin(context: Context) {
         viewModelScope.launch {
-            // No abortar por tener Firebase user: permitimos usar biometría como compuerta de acceso
             val candidateUserId = getLastBiometricCandidateUserId(context)
-            Log.d(TAG_AUTH_VIEW_MODEL, "attemptInitialBiometricLogin: Candidate User ID from Prefs: ${candidateUserId}")
+            Log.d(TAG_AUTH_VIEW_MODEL, "attemptInitialBiometricLogin: Candidate User ID from Prefs: $candidateUserId")
             if (candidateUserId != null && isBiometricPreferenceEnabled(context, candidateUserId)) {
-                Log.d(TAG_AUTH_VIEW_MODEL, "attemptInitialBiometricLogin: Conditions met for user ${candidateUserId}. Showing biometric prompt.")
+                Log.d(TAG_AUTH_VIEW_MODEL, "attemptInitialBiometricLogin: Conditions met for user $candidateUserId. Showing biometric prompt.")
                 _loginUiState.update { it.copy(isLoading = true, loginError = null) }
                 _showBiometricPrompt.value = true
             } else {
-                Log.d(TAG_AUTH_VIEW_MODEL, "attemptInitialBiometricLogin: Conditions NOT met. No biometric prompt. Candidate: ${candidateUserId}")
+                Log.d(TAG_AUTH_VIEW_MODEL, "attemptInitialBiometricLogin: Conditions NOT met. No biometric prompt. Candidate: $candidateUserId")
                 _loginUiState.update { it.copy(isLoading = false) }
                 _showBiometricPrompt.value = false
             }
@@ -188,30 +251,77 @@ class AuthViewModel(
     fun onBiometricAuthenticationSuccess(context: Context) {
         viewModelScope.launch {
             _showBiometricPrompt.value = false
-            val candidateUserId = getLastBiometricCandidateUserId(context) // Usar siempre el último candidato guardado
-            Log.d(TAG_AUTH_VIEW_MODEL, "onBiometricAuthenticationSuccess: Last Biometric Candidate User ID: ${candidateUserId}")
+            val candidateUserId = getLastBiometricCandidateUserId(context)
+            val candidateEmail = getLastBiometricCandidateEmail(context)
+            val candidatePassword = getLastBiometricCandidatePassword(context)
 
-            if (candidateUserId != null) {
-                // Procedemos a obtener los detalles de este usuario.
-                // firebaseUser en loginUiState seguirá siendo null si no había sesión de Firebase.
-                fetchUserDetails(
-                    userIdToFetch = candidateUserId,
-                    context = context,
-                    isBiometricAuthSuccess = true
-                )
+            Log.d(TAG_AUTH_VIEW_MODEL, "onBiometricAuthenticationSuccess: Last Biometric Candidate User ID: $candidateUserId")
+
+            if (candidateUserId != null && candidateEmail != null && candidatePassword != null) {
+                Log.d(TAG_AUTH_VIEW_MODEL, "Attempting Firebase sign-in with saved credentials for biometric auth")
+                _loginUiState.update { it.copy(isLoading = true, loginError = null) }
+
+                authBackend.signIn(candidateEmail, candidatePassword) { result ->
+                    if (result.isSuccess) {
+                        val firebaseUser = result.getOrNull()
+                        if (firebaseUser != null) {
+                            Log.d(TAG_AUTH_VIEW_MODEL, "Firebase Sign-In successful via biometric for user ${firebaseUser.uid}. Fetching details.")
+                            fetchUserDetails(
+                                userIdToFetch = firebaseUser.uid,
+                                context = context,
+                                isBiometricAuthSuccess = true
+                            )
+                        } else {
+                            _loginUiState.update { it.copy(isLoading = false, loginError = "Error de login inesperado.") }
+                        }
+                    } else {
+                        val ex = result.exceptionOrNull()
+                        Log.e(TAG_AUTH_VIEW_MODEL, "Biometric login failed: ${ex?.message}", ex)
+                        val errorMessage = "Error al iniciar sesión con biometría. Por favor, inicia sesión con tus credenciales."
+                        _loginUiState.update { it.copy(isLoading = false, loginError = errorMessage) }
+                    }
+                }
             } else {
-                Log.e(TAG_AUTH_VIEW_MODEL, "onBiometricAuthenticationSuccess: Last Biometric Candidate User ID is null. Cannot proceed.")
+                Log.e(TAG_AUTH_VIEW_MODEL, "onBiometricAuthenticationSuccess: Missing credentials. Cannot proceed.")
                 _loginUiState.update {
-                    it.copy(isLoading = false, loginError = "Error biométrico: No se pudo identificar al usuario.")
+                    it.copy(isLoading = false, loginError = "Error biométrico: No se encontraron credenciales guardadas. Inicia sesión con tu correo y contraseña.")
                 }
             }
         }
     }
 
-    fun onBiometricAuthenticationCancelledOrError() { // No necesita context ahora
+    fun onBiometricAuthenticationCancelledOrError() {
         Log.d(TAG_AUTH_VIEW_MODEL, "onBiometricAuthenticationCancelledOrError called.")
         _showBiometricPrompt.value = false
-        _loginUiState.update { it.copy(isLoading = false) } // Solo resetear isLoading
+        _loginUiState.update { it.copy(isLoading = false) }
+    }
+
+    fun saveUserSession(context: Context, user: FirebaseUser, appUser: User? = null) {
+        val userName = appUser?.name ?: user.displayName ?: user.email?.substringBefore("@") ?: "Usuario"
+        val userEmail = user.email ?: ""
+
+        Log.d(TAG_AUTH_VIEW_MODEL, "Saving user session for ${user.uid} with name: $userName")
+
+        getPrefs(context).edit()
+            .putString(KEY_USER_NAME, userName)
+            .putString(KEY_USER_EMAIL, userEmail)
+            .putBoolean("is_logged_in", true)
+            .apply()
+    }
+
+    fun getSavedUserName(context: Context): String {
+        val savedName = getPrefs(context).getString(KEY_USER_NAME, "Usuario") ?: "Usuario"
+        Log.d(TAG_AUTH_VIEW_MODEL, "Getting saved user name: $savedName")
+        return savedName
+    }
+
+    fun clearUserSession(context: Context) {
+        Log.d(TAG_AUTH_VIEW_MODEL, "Clearing user session")
+        getPrefs(context).edit()
+            .remove(KEY_USER_NAME)
+            .remove(KEY_USER_EMAIL)
+            .remove("is_logged_in")
+            .apply()
     }
 
     fun toggleBiometricPreference(context: Context, userId: String, enabled: Boolean) {
@@ -220,14 +330,14 @@ class AuthViewModel(
         if (enabled) {
             setLastBiometricCandidateUserId(context, userId)
             message = "Biometría habilitada para inicio rápido."
-            Log.i(TAG_AUTH_VIEW_MODEL, "Biometric preference ENABLED for user ${userId}. Set as last candidate.")
+            Log.i(TAG_AUTH_VIEW_MODEL, "Biometric preference ENABLED for user $userId. Set as last candidate.")
         } else {
             message = "Biometría deshabilitada."
             if (userId == getLastBiometricCandidateUserId(context)) {
                 setLastBiometricCandidateUserId(context, null)
-                Log.i(TAG_AUTH_VIEW_MODEL, "Biometric preference DISABLED for user ${userId}. Cleared as last candidate.")
+                Log.i(TAG_AUTH_VIEW_MODEL, "Biometric preference DISABLED for user $userId. Cleared as last candidate.")
             } else {
-                Log.i(TAG_AUTH_VIEW_MODEL, "Biometric preference DISABLED for user ${userId} (was not the last candidate).")
+                Log.i(TAG_AUTH_VIEW_MODEL, "Biometric preference DISABLED for user $userId (was not the last candidate).")
             }
             _showBiometricPrompt.value = false
         }
@@ -237,7 +347,7 @@ class AuthViewModel(
     fun loginUser(context: Context) {
         val currentEmail = _email.value.trim()
         val currentPassword = _password.value
-        Log.d(TAG_AUTH_VIEW_MODEL, "loginUser called with email: ${currentEmail}")
+        Log.d(TAG_AUTH_VIEW_MODEL, "loginUser called with email: $currentEmail")
 
         if (currentEmail.isBlank() || currentPassword.isBlank()) {
             _loginUiState.update { it.copy(loginError = "Correo y contraseña no pueden estar vacíos.") }
@@ -249,6 +359,7 @@ class AuthViewModel(
                 val firebaseUser = result.getOrNull()
                 if (firebaseUser != null) {
                     Log.d(TAG_AUTH_VIEW_MODEL, "Firebase Sign-In successful for user ${firebaseUser.uid}. Fetching details.")
+                    setEncryptedCredentials(context, currentEmail, currentPassword)
                     fetchUserDetails(
                         userIdToFetch = firebaseUser.uid,
                         context = context,
@@ -276,7 +387,7 @@ class AuthViewModel(
         isBiometricAuthSuccess: Boolean = false,
         isCredentialLogin: Boolean = false
     ) {
-        Log.d(TAG_AUTH_VIEW_MODEL, "fetchUserDetails for userId: ${userIdToFetch}, isBiometric: ${isBiometricAuthSuccess}, isCredential: ${isCredentialLogin}")
+        Log.d(TAG_AUTH_VIEW_MODEL, "fetchUserDetails for userId: $userIdToFetch, isBiometric: $isBiometricAuthSuccess, isCredential: $isCredentialLogin")
         _loginUiState.update { it.copy(isLoading = true, loginError = null) }
         userDataSource.fetchUser(userIdToFetch,
             onSuccess = { document ->
@@ -286,12 +397,10 @@ class AuthViewModel(
                     val role = appUser?.role?.let { roleName ->
                         try { UserRole.valueOf(roleName.uppercase()) } catch (_: IllegalArgumentException) { null }
                     }
-                    Log.d(TAG_AUTH_VIEW_MODEL, "fetchUserDetails success for ${userIdToFetch}. Role: ${role}. Current Firebase user: ${currentFbUser?.uid}")
+                    Log.d(TAG_AUTH_VIEW_MODEL, "fetchUserDetails success for $userIdToFetch. Role: $role. Current Firebase user: ${currentFbUser?.uid}")
 
-                    // Verificar si el usuario está activo
                     if (appUser?.active != true) {
-                        Log.w(TAG_AUTH_VIEW_MODEL, "Usuario ${userIdToFetch} está desactivado. Bloqueando acceso.")
-                        // Cerrar sesión de Firebase si el usuario está desactivado
+                        Log.w(TAG_AUTH_VIEW_MODEL, "Usuario $userIdToFetch está desactivado. Bloqueando acceso.")
                         authBackend.signOut()
                         val errorMessage = "Tu cuenta ha sido desactivada. Contacta al administrador."
                         _loginUiState.update { it.copy(isLoading = false, loginError = errorMessage, userAppRole = null, firebaseUser = null) }
@@ -299,22 +408,36 @@ class AuthViewModel(
                         return@fetchUser
                     }
 
+                    if (isBiometricAuthSuccess) {
+                        val userName = appUser?.name ?: appUser?.email?.substringBefore("@") ?: "Usuario"
+                        val userEmail = appUser?.email ?: ""
+
+                        Log.d(TAG_AUTH_VIEW_MODEL, "Saving biometric user session for $userIdToFetch with name: $userName")
+
+                        getPrefs(context).edit()
+                            .putString(KEY_USER_NAME, userName)
+                            .putString(KEY_USER_EMAIL, userEmail)
+                            .putBoolean("is_logged_in", true)
+                            .apply()
+                    } else if (currentFbUser != null) {
+                        saveUserSession(context, currentFbUser, appUser)
+                    }
+
                     if (isCredentialLogin && currentFbUser?.uid == userIdToFetch) {
                         toggleBiometricPreference(context, userIdToFetch, true)
                         _justLoggedInWithCredentials.value = true
                     } else if (isBiometricAuthSuccess) {
                         setLastBiometricCandidateUserId(context, userIdToFetch)
-                        Log.i(TAG_AUTH_VIEW_MODEL, "Biometric auth success: ${userIdToFetch} (re)confirmed as last candidate.")
+                        Log.i(TAG_AUTH_VIEW_MODEL, "Biometric auth success: $userIdToFetch (re)confirmed as last candidate.")
                     }
                     _loginUiState.update {
                         it.copy(isLoading = false, userAppRole = role, firebaseUser = currentFbUser)
                     }
                 } else {
-                    // Documento no existe: si venimos de login por credenciales, intentamos crear doc desde invitación
                     val currentFbUser = authBackend.currentUser
                     val emailLower = currentFbUser?.email?.trim()?.lowercase()
                     if (isCredentialLogin && currentFbUser != null && !emailLower.isNullOrBlank()) {
-                        Log.w(TAG_AUTH_VIEW_MODEL, "User doc not found. Trying to create from invitation for email: ${emailLower}")
+                        Log.w(TAG_AUTH_VIEW_MODEL, "User doc not found. Trying to create from invitation for email: $emailLower")
                         userDataSource.fetchInvitationByEmail(emailLower,
                             onSuccess = { inviteDoc ->
                                 val roleFromInvite = inviteDoc?.getString("role") ?: UserRole.EMPLOYEE.name
@@ -329,7 +452,6 @@ class AuthViewModel(
                                 userDataSource.createUserDoc(currentFbUser.uid, newUser,
                                     onSuccess = {
                                         Log.i(TAG_AUTH_VIEW_MODEL, "User doc created from invitation for ${currentFbUser.uid}")
-                                        // Vuelve a cargar detalles para tener role correcto
                                         fetchUserDetails(currentFbUser.uid, context, isBiometricAuthSuccess = false, isCredentialLogin = false)
                                         toggleBiometricPreference(context, currentFbUser.uid, true)
                                         _justLoggedInWithCredentials.value = true
@@ -359,7 +481,7 @@ class AuthViewModel(
                 }
             },
             onFailure = { exception ->
-                Log.e(TAG_AUTH_VIEW_MODEL, "fetchUserDetails failed for ${userIdToFetch}: ${exception.message}", exception)
+                Log.e(TAG_AUTH_VIEW_MODEL, "fetchUserDetails failed for $userIdToFetch: ${exception.message}", exception)
                 val errorMessage = if (isBiometricAuthSuccess) {
                     "Error al verificar usuario (biometría). Inicie sesión."
                 } else {
@@ -374,7 +496,7 @@ class AuthViewModel(
     fun logoutUser(context: Context) {
         viewModelScope.launch {
             authBackend.signOut()
-            // No borrar el último candidato biométrico: se debe mantener para login biométrico posterior
+            clearUserSession(context)
             _loginUiState.value = LoginUiState()
             _showBiometricPrompt.value = false
             _justLoggedInWithCredentials.value = false
@@ -407,5 +529,69 @@ class AuthViewModel(
     fun resetJustLoggedInWithCredentialsFlag() {
         Log.d(TAG_AUTH_VIEW_MODEL, "resetJustLoggedInWithCredentialsFlag")
         _justLoggedInWithCredentials.value = false
+    }
+
+    // Nueva función para verificar y refrescar custom claims
+    fun checkAndRefreshAdminClaims() {
+        val currentUser = authBackend.currentUser
+        if (currentUser != null) {
+            Log.d(TAG_AUTH_VIEW_MODEL, "Verificando custom claims para usuario: ${currentUser.uid}")
+
+            // Forzar renovación del token para obtener claims actualizados
+            currentUser.getIdToken(true)
+                .addOnSuccessListener { result ->
+                    val isAdmin = result.claims["admin"] == true
+                    Log.d(TAG_AUTH_VIEW_MODEL, "Custom claims verificados - isAdmin: $isAdmin")
+                    Log.d(TAG_AUTH_VIEW_MODEL, "Todos los claims: ${result.claims}")
+
+                    // Actualizar el estado si el usuario es admin pero el role no está reflejado
+                    if (isAdmin && _loginUiState.value.userAppRole != UserRole.ADMIN) {
+                        Log.i(TAG_AUTH_VIEW_MODEL, "Usuario tiene claim admin=true, actualizando role a ADMIN")
+                        _loginUiState.update {
+                            it.copy(userAppRole = UserRole.ADMIN)
+                        }
+                    } else if (!isAdmin && _loginUiState.value.userAppRole == UserRole.ADMIN) {
+                        Log.w(TAG_AUTH_VIEW_MODEL, "Usuario NO tiene claim admin=true, bajando role a EMPLOYEE")
+                        _loginUiState.update {
+                            it.copy(userAppRole = UserRole.EMPLOYEE)
+                        }
+                    }
+                }
+                .addOnFailureListener { exception ->
+                    Log.e(TAG_AUTH_VIEW_MODEL, "Error al verificar custom claims: ${exception.message}", exception)
+                }
+        } else {
+            Log.w(TAG_AUTH_VIEW_MODEL, "No hay usuario autenticado para verificar claims")
+        }
+    }
+
+    // Función para forzar actualización del token después de que se asignen claims
+    fun forceTokenRefresh(context: Context) {
+        val currentUser = authBackend.currentUser
+        if (currentUser != null) {
+            Log.d(TAG_AUTH_VIEW_MODEL, "Forzando actualización del token...")
+            _loginUiState.update { it.copy(isLoading = true) }
+
+            currentUser.getIdToken(true)
+                .addOnSuccessListener { result ->
+                    val isAdmin = result.claims["admin"] == true
+                    Log.d(TAG_AUTH_VIEW_MODEL, "Token actualizado - isAdmin: $isAdmin")
+
+                    // Re-fetch user details para actualizar el role
+                    fetchUserDetails(
+                        userIdToFetch = currentUser.uid,
+                        context = context,
+                        isBiometricAuthSuccess = false,
+                        isCredentialLogin = false
+                    )
+
+                    uiMessenger.showMessage(context, "Permisos actualizados correctamente")
+                }
+                .addOnFailureListener { exception ->
+                    Log.e(TAG_AUTH_VIEW_MODEL, "Error al actualizar token: ${exception.message}", exception)
+                    _loginUiState.update { it.copy(isLoading = false) }
+                    uiMessenger.showMessage(context, "Error al actualizar permisos")
+                }
+        }
     }
 }

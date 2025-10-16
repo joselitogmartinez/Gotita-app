@@ -1,0 +1,31 @@
+{"users": [
+{
+  "localId": "AmpRXdyffPVZQiv5HvlxSqYMEoy2",
+  "email": "jgironm20@miumg.edu.gt",
+  "emailVerified": false,
+  "passwordHash": "IXhlVo074ZVY/2PiTCR2XEd3VTBzNmKobwI3TJBja+v9vHWw0KXRT+8A/9i2st216YaCjwjS3YYmVDArg11P6A==",
+  "salt": "P/uj1FC5EHvbLw==",
+  "lastSignedInAt": "1760463140337",
+  "createdAt": "1760153456842",
+  "providerUserInfo": []
+},
+{
+  "localId": "F5i46Prx8IUCosOPpo2HQf3qiuG2",
+  "email": "asistentepresupuesto2022@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "bixHUWn24Sa3fWnp5KQd9iCDmYtwcO7eapnwVvmryvlvcFbB+nwpQ864op/jrUVJ8b7LjSQ8P4jjZ9RWE0bkRA==",
+  "salt": "wPKBPl/rzY7lAQ==",
+  "lastSignedInAt": "1760459480939",
+  "createdAt": "1760459480939",
+  "providerUserInfo": []
+},
+{
+  "localId": "JSgY0ydOufTH7WurYlEwKRrm1ao2",
+  "email": "joselitogiron.a@gmail.com",
+  "emailVerified": false,
+  "passwordHash": "MR9DPQfLAPHKIs1ExlYQkhd1Y8lmBrxhpTEkLccMbHqUHaasb44oK2k0uVVBf5pSiuDhdORXLpfyzWXMPAzukg==",
+  "salt": "SPDewyGljvXmtA==",
+  "lastSignedInAt": "1760464426015",
+  "createdAt": "1760136500258",
+  "providerUserInfo": []
+}]}

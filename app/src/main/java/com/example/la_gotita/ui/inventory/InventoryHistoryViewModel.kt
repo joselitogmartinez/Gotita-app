@@ -9,6 +9,7 @@ import com.example.la_gotita.data.model.InventoryMovement
 import com.example.la_gotita.data.model.MovementSource
 import com.example.la_gotita.data.model.MovementType
 import com.example.la_gotita.data.repository.InventoryRepository
+import com.example.la_gotita.data.repository.InventoryMovementRepository
 import com.example.la_gotita.utils.PdfGenerator
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -46,7 +47,7 @@ data class InventoryHistoryUiState(
 
 class InventoryHistoryViewModel(
     private val inventoryRepo: InventoryRepository = InventoryRepository,
-    private val movementRepo: com.example.la_gotita.data.repository.InventoryMovementRepository = com.example.la_gotita.data.repository.InventoryMovementRepository
+    private val movementRepo: InventoryMovementRepository = InventoryMovementRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(InventoryHistoryUiState())
@@ -205,19 +206,27 @@ class InventoryHistoryViewModel(
         }
     }
 
-    fun registerEntry(quantity: Int, description: String, userName: String, context: Context) {
+    fun registerEntry(quantity: Int, description: String, context: Context, authViewModel: com.example.la_gotita.ui.login.AuthViewModel) {
         val pid = _uiState.value.productId
         val pname = _uiState.value.productName
         if (pid.isBlank() || quantity <= 0) return
+        val userName = authViewModel.getSavedUserName(context)
         viewModelScope.launch {
             try {
+                // Primero obtener el stock actual del producto
+                val currentProduct = inventoryRepo.getByProductId(pid)
+                val currentStock = currentProduct?.quantity ?: 0
+
+                // Actualizar el inventario (incrementar stock)
                 inventoryRepo.addStock(pid, quantity, pricePerUnit = 0.0, batchNumber = null, notes = description)
-                // Calcular saldo disponible después de la entrada
-                val movimientos = movementRepo.getAllForProduct(pid)
-                val saldoAnterior = movimientos.firstOrNull()?.availableAfter ?: _uiState.value.productQuantity
-                val saldoNuevo = saldoAnterior + quantity
+
+                // Calcular el nuevo saldo después de la entrada
+                val saldoNuevo = currentStock + quantity
+
+                // Registrar el movimiento de entrada
                 movementRepo.addEntry(pid, pname, quantity, description, userName, availableAfter = saldoNuevo)
-                Toast.makeText(context, "Entrada registrada", Toast.LENGTH_SHORT).show()
+
+                Toast.makeText(context, "Entrada registrada exitosamente", Toast.LENGTH_SHORT).show()
                 load(pid)
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message ?: "Error al registrar entrada") }
@@ -226,27 +235,155 @@ class InventoryHistoryViewModel(
         }
     }
 
-    fun registerExit(quantity: Int, description: String, userName: String, context: Context) {
+    fun registerExit(quantity: Int, description: String, context: Context, authViewModel: com.example.la_gotita.ui.login.AuthViewModel) {
         val pid = _uiState.value.productId
         val pname = _uiState.value.productName
         val available = _uiState.value.productQuantity
         if (pid.isBlank() || quantity <= 0) return
         if (available < quantity) {
-            Toast.makeText(context, "Cantidad supera el stock disponible", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Cantidad supera el stock disponible (Disponible: $available)", Toast.LENGTH_LONG).show()
             return
         }
+        val userName = authViewModel.getSavedUserName(context)
         viewModelScope.launch {
             try {
+                // Primero obtener el stock actual del producto
+                val currentProduct = inventoryRepo.getByProductId(pid)
+                val currentStock = currentProduct?.quantity ?: 0
+
+                // Actualizar el inventario (decrementar stock)
                 inventoryRepo.removeStock(pid, quantity, notes = description)
-                // Calcular saldo disponible después de la salida
-                val movimientos = movementRepo.getAllForProduct(pid)
-                val saldoAnterior = movimientos.firstOrNull()?.availableAfter ?: _uiState.value.productQuantity
-                val saldoNuevo = saldoAnterior - quantity
+
+                // Calcular el nuevo saldo después de la salida
+                val saldoNuevo = (currentStock - quantity).coerceAtLeast(0)
+
+                // Registrar el movimiento de salida
                 movementRepo.addExit(pid, pname, quantity, description, userName, MovementSource.MANUAL, availableAfter = saldoNuevo)
-                Toast.makeText(context, "Salida registrada", Toast.LENGTH_SHORT).show()
+
+                Toast.makeText(context, "Salida registrada exitosamente", Toast.LENGTH_SHORT).show()
                 load(pid)
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = e.message ?: "Error al registrar salida") }
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun updateMovement(
+        movementId: String,
+        oldQuantity: Int,
+        newQuantity: Int,
+        newDescription: String,
+        movementType: MovementType,
+        context: Context
+    ) {
+        val pid = _uiState.value.productId
+        val pname = _uiState.value.productName
+        if (pid.isBlank() || newQuantity <= 0) return
+
+        viewModelScope.launch {
+            try {
+                // Calcular la diferencia en el inventario
+                val quantityDifference = newQuantity - oldQuantity
+
+                // Obtener el stock actual del producto
+                val currentProduct = inventoryRepo.getByProductId(pid)
+                val currentStock = currentProduct?.quantity ?: 0
+
+                // Actualizar el inventario según el tipo de movimiento
+                if (movementType == MovementType.ENTRY) {
+                    // Para entradas: si aumenta la cantidad, agregar al stock; si disminuye, quitar
+                    if (quantityDifference > 0) {
+                        inventoryRepo.addStock(pid, quantityDifference, pricePerUnit = 0.0, batchNumber = null, notes = newDescription)
+                    } else if (quantityDifference < 0) {
+                        inventoryRepo.removeStock(pid, -quantityDifference, notes = newDescription)
+                    }
+                } else {
+                    // Para salidas: si aumenta la cantidad, quitar más del stock; si disminuye, devolver al stock
+                    if (quantityDifference > 0) {
+                        // Verificar que hay suficiente stock
+                        if (currentStock < quantityDifference) {
+                            Toast.makeText(context, "Stock insuficiente para aumentar la salida", Toast.LENGTH_LONG).show()
+                            return@launch
+                        }
+                        inventoryRepo.removeStock(pid, quantityDifference, notes = newDescription)
+                    } else if (quantityDifference < 0) {
+                        inventoryRepo.addStock(pid, -quantityDifference, pricePerUnit = 0.0, batchNumber = null, notes = newDescription)
+                    }
+                }
+
+                // Obtener el nuevo stock después del cambio
+                val updatedProduct = inventoryRepo.getByProductId(pid)
+                val newStock = updatedProduct?.quantity ?: 0
+
+                // Actualizar el documento del movimiento en Firestore
+                movementRepo.updateMovement(movementId, newQuantity, newDescription, newStock)
+
+                Toast.makeText(context, "Movimiento actualizado exitosamente", Toast.LENGTH_SHORT).show()
+                load(pid)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message ?: "Error al actualizar movimiento") }
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun voidMovement(
+        movementId: String,
+        movementType: MovementType,
+        quantity: Int,
+        voidReason: String,
+        context: Context,
+        authViewModel: com.example.la_gotita.ui.login.AuthViewModel
+    ) {
+        val pid = _uiState.value.productId
+        if (pid.isBlank() || voidReason.isBlank()) {
+            Toast.makeText(context, "La justificación es obligatoria", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        viewModelScope.launch {
+            try {
+                // Obtener el stock actual del producto
+                val currentProduct = inventoryRepo.getByProductId(pid)
+                val currentStock = currentProduct?.quantity ?: 0
+
+                // Revertir el movimiento: Si era SALIDA, devolver al stock; si era ENTRADA, quitar del stock
+                val newStock = if (movementType == MovementType.EXIT) {
+                    // Era una salida, devolver la cantidad al stock
+                    inventoryRepo.addStock(pid, quantity, pricePerUnit = 0.0, batchNumber = null, notes = "Anulación: $voidReason")
+                    currentStock + quantity
+                } else {
+                    // Era una entrada, quitar la cantidad del stock
+                    if (currentStock < quantity) {
+                        Toast.makeText(context, "Stock insuficiente para anular esta entrada", Toast.LENGTH_LONG).show()
+                        return@launch
+                    }
+                    inventoryRepo.removeStock(pid, quantity, notes = "Anulación: $voidReason")
+                    currentStock - quantity
+                }
+
+                // Obtener nombre de usuario
+                val userName = authViewModel.getSavedUserName(context)
+
+                // Crear la nueva descripción con justificación y unidades anuladas
+                val newDescription = "Anulado: $quantity unidades - $voidReason"
+
+                // Marcar el movimiento como anulado en Firestore con cantidad en 0 y nueva descripción
+                movementRepo.voidMovement(
+                    movementId = movementId,
+                    voidReason = voidReason,
+                    voidedBy = userName,
+                    newAvailableAfter = newStock,
+                    newDescription = newDescription,
+                    originalQuantity = quantity
+                )
+
+                Toast.makeText(context, "Movimiento anulado exitosamente", Toast.LENGTH_SHORT).show()
+                load(pid)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = e.message ?: "Error al anular movimiento") }
+                Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
     }
